@@ -1,0 +1,64 @@
+go back n arq-server
+import socket
+
+# Create a UDP socket
+server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server_address = ('localhost', 12345)
+server_socket.bind(server_address)
+
+expected_sequence_number = 0
+
+while True:
+    # Wait to receive a frame from the client
+    data, client_address = server_socket.recvfrom(1024)
+    frame, sequence_number = data.decode().split(':')
+
+    # Check if received frame is as expected
+    if int(sequence_number) == expected_sequence_number:
+        print("Received frame:", frame)
+        # Send acknowledgment (ACK)
+        ack = str(expected_sequence_number).encode()
+        server_socket.sendto(ack, client_address)
+        expected_sequence_number += 1
+    else:
+        print("Received out-of-order frame:", frame)
+        # Send acknowledgment (ACK) for last correctly received frame
+        ack = str(expected_sequence_number - 1).encode()
+        server_socket.sendto(ack, client_address)
+
+client
+import socket
+
+# Create a UDP socket
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+server_address = ('localhost', 12345)
+
+frames = ["frame0", "frame1", "frame2", "frame3", "frame4"]
+
+window_size = 3
+base = 0
+next_sequence_number = 0
+
+while base < len(frames):
+    # Send frames within the window
+    while next_sequence_number < base + window_size and next_sequence_number < len(frames):
+        frame = frames[next_sequence_number]
+        sequence_number = str(next_sequence_number)
+        data = frame + ':' + sequence_number
+        client_socket.sendto(data.encode(), server_address)
+        next_sequence_number += 1
+
+    # Wait for acknowledgments (ACKs)
+    try:
+        client_socket.settimeout(2)  # Set a timeout for receiving ACKs
+        while True:
+            ack, server_address = client_socket.recvfrom(1024)
+            ack_sequence_number = int(ack.decode())
+            if ack_sequence_number >= base:
+                base = ack_sequence_number + 1
+            if base >= len(frames):
+                break
+    except socket.timeout:
+        print("Timeout occurred. Resending frames from base.")
+
+client_socket.close()
